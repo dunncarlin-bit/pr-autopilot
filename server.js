@@ -134,62 +134,60 @@ app.post('/webhook', async (req, res) => {
     return res.status(200).json({ skipped: true, reason: 'description already present' });
   }
 
-  // Respond to GitHub immediately (they have a 10s timeout)
-  res.status(202).json({ accepted: true });
+  // 6. Do the work synchronously before responding.
+  //    Vercel serverless kills the function immediately after res.end() —
+  //    setImmediate / fire-and-forget patterns never execute. We process
+  //    everything inline. Claude Haiku is fast enough (~3-5 s) to stay
+  //    comfortably within GitHub's 10-second webhook delivery timeout.
+  try {
+    const token = await getInstallationToken(installationId);
+    const octokit = getOctokit(token);
 
-  // 6. Do the work asynchronously
-  setImmediate(async () => {
+    // Fetch file metadata (fast)
+    const files = await getPRFiles(octokit, owner.login, repo, pullNumber);
+    console.log(`   📂 ${files.length} files changed`);
+
+    // Build a lightweight diff summary from file patches (avoids fetching full diff)
+    const patchSummary = files
+      .filter(f => f.patch)
+      .map(f => `--- ${f.filename}\n${f.patch}`)
+      .join('\n\n')
+      .slice(0, 20_000);
+
+    // Generate the description
+    console.log('   🤖 Generating description...');
+    const description = await generateDescription({
+      title,
+      headBranch: head.ref,
+      baseBranch: base.ref,
+      diff: patchSummary,
+      files,
+    });
+
+    // Try to update the PR body first
     try {
-      const token = await getInstallationToken(installationId);
-      const octokit = getOctokit(token);
-
-      // Fetch file metadata (fast)
-      const files = await getPRFiles(octokit, owner.login, repo, pullNumber);
-      console.log(`   📂 ${files.length} files changed`);
-
-      // Build a lightweight diff summary from file patches (avoids fetching full diff)
-      const patchSummary = files
-        .filter(f => f.patch)
-        .map(f => `--- ${f.filename}\n${f.patch}`)
-        .join('\n\n')
-        .slice(0, 20_000);
-
-      // Generate the description
-      console.log('   🤖 Generating description...');
-      const description = await generateDescription({
-        title,
-        headBranch: head.ref,
-        baseBranch: base.ref,
-        diff: patchSummary,
-        files,
-      });
-
-      // Try to update the PR body first
-      try {
-        await updatePRBody(octokit, owner.login, repo, pullNumber, description);
-        console.log('   ✅ PR body updated');
-      } catch (updateErr) {
-        // Fall back to posting a comment
-        console.warn('   ⚠️  Could not update PR body, posting comment instead:', updateErr.message);
-        const commentBody = `### 📝 PR Autopilot — Suggested Description\n\nThe PR was opened without a description. Here's a generated one — paste it in if useful:\n\n---\n\n${description}`;
-        await postComment(octokit, owner.login, repo, pullNumber, commentBody);
-        console.log('   ✅ Comment posted');
-      }
-
-      // Label it so teams know it was auto-generated
-      await addLabel(octokit, owner.login, repo, pullNumber, 'pr-autopilot');
-
-    } catch (err) {
-      console.error('   💥 Error processing PR:', err.message);
+      await updatePRBody(octokit, owner.login, repo, pullNumber, description);
+      console.log('   ✅ PR body updated');
+    } catch (updateErr) {
+      // Fall back to posting a comment
+      console.warn('   ⚠️  Could not update PR body, posting comment instead:', updateErr.message);
+      const commentBody = `### 📝 PR Autopilot — Suggested Description\n\nThe PR was opened without a description. Here's a generated one — paste it in if useful:\n\n---\n\n${description}`;
+      await postComment(octokit, owner.login, repo, pullNumber, commentBody);
+      console.log('   ✅ Comment posted');
     }
-  });
+
+    // Label it so teams know it was auto-generated
+    await addLabel(octokit, owner.login, repo, pullNumber, 'pr-autopilot');
+
+    return res.status(200).json({ ok: true });
+
+  } catch (err) {
+    console.error('   💥 Error processing PR:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Start server ───────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`\n🚀 PR Autopilot running on port ${PORT}`);
-  console.log(`   Webhook endpoint: POST /webhook`);
-  console.log(`   Landing page:     GET  /`);
-  console.log(`   Health check:     GET  /health\n`);
-});
+  console.log(`\

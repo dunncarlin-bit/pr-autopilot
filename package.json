@@ -1,0 +1,20 @@
+{
+  "name": "pr-autopilot",
+  "version": "1.0.0",
+  "description": "GitHub App that auto-writes PR descriptions using AI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.1.1",
+    "@anthropic-ai/sdk": "^0.26.1",
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5"
+  },
+  "license": "MIT"
+}

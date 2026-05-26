@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PR Autopilot — Auto-write your PR descriptions</title>
+  <meta name="description" content="A GitHub App that reads your diff and writes a clear PR description the moment you open a pull request. Free for public repos." />
+  <meta property="og:title" content="PR Autopilot" />
+  <meta property="og:description" content="Stop writing PR descriptions. Let AI do it." />
+  <meta property="og:image" content="/og-image.png" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #7d8590;
+      --accent: #58a6ff;
+      --accent-dim: #1f3358;
+      --green: #3fb950;
+      --green-dim: #0f2d16;
+      --red: #f85149;
+      --yellow: #d29922;
+      --purple: #bc8cff;
+      --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ── */
+    .container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── Nav ── */
+    nav {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+      position: sticky;
+      top: 0;
+      background: rgba(13,17,23,0.85);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+    nav .inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .logo {
+      font-weight: 700;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+    }
+    .logo span { color: var(--accent); }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .nav-links a { color: var(--muted); }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    /* ── Hero ── */
+    .hero {
+      padding: 96px 0 64px;
+      text-align: center;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid var(--green);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+    .badge::before { content: '●'; font-size: 8px; }
+
+    h1 {
+      font-size: clamp(32px, 6vw, 56px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 20px;
+    }
+    h1 em { color: var(--accent); font-style: normal; }
+
+    .sub {
+      font-size: clamp(16px, 2.5vw, 20px);
+      color: var(--muted);
+      max-width: 560px;
+      margin: 0 auto 36px;
+      line-height: 1.5;
+    }
+
+    .cta-group {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:hover { opacity: 0.85; transform: translateY(-1px); text-decoration: none; }
+    .btn:active { transform: translateY(0); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0d1117;
+    }
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .social-proof {
+      margin-top: 24px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* ── Before/After demo ── */
+    .demo {
+      padding: 80px 0;
+    }
+    .section-label {
+      text-align: center;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .section-title {
+      text-align: center;
+      font-size: clamp(24px, 4vw, 36px);
+      font-weight: 700;
+      margin-bottom: 48px;
+    }
+
+    .before-after {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 640px) { .before-after { grid-template-columns: 1fr; } }
+
+    .pr-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .pr-card-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .pr-icon { font-size: 16px; }
+    .pr-number { color: var(--muted); font-weight: 400; }
+    .pr-card-body { padding: 16px; }
+
+    .bad-badge {
+      display: inline-block;
+      background: rgba(248, 81, 73, 0.15);
+      color: var(--red);
+      border: 1px solid var(--red);
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .good-badge {
+      display: inline-block;
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid var(--green);
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .empty-desc {
+      color: var(--muted);
+      font-style: italic;
+      font-size: 14px;
+      padding: 12px;
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+    }
+
+    .pr-desc {
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .pr-desc h4 {
+      font-size: 13px;
+      color: var(--accent);
+      margin: 12px 0 4px;
+    }
+    .pr-desc h4:first-child { margin-top: 0; }
+    .pr-desc p { color: var(--text); margin-bottom: 6px; }
+    .pr-desc code {
+      background: rgba(110,118,129,0.2);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .pr-desc ul { padding-left: 18px; color: var(--text); }
+    .pr-desc li { margin-bottom: 3px; }
+    .pr-footer {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ── How it works ── */
+    .how {
+      padding: 80px 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      margin-top: 48px;
+    }
+    @media (max-width: 640px) { .steps { grid-template-columns: 1fr; } }
+
+    .step {
+      text-align: center;
+    }
+    .step-num {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--accent-dim);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0 auto 16px;
+    }
+    .step h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .step p { font-size: 14px; color: var(--muted); line-height: 1.5; }
+
+    /* ── Features ── */
+    .features {
+      padding: 80px 0;
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      margin-top: 48px;
+    }
+    @media (max-width: 640px) { .feature-grid { grid-template-columns: 1fr; } }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .feature-icon { font-size: 28px; margin-bottom: 12px; }
+    .feature-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+    .feature-card p { font-size: 14px; color: var(--muted); line-height: 1.5; }
+
+    /* ── Pricing ── */
+    .pricing {
+      padding: 80px 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      margin-top: 48px;
+      max-width: 640px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    @media (max-width: 640px) { .pricing-grid { grid-template-columns: 1fr; } }
+
+    .plan {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+    }
+    .plan.featured {
+      border-color: var(--accent);
+      position: relative;
+    }
+    .plan-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .plan-price {
+      font-size: 40px;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .plan-price sup { font-size: 20px; vertical-align: top; margin-top: 6px; }
+    .plan-price span { font-size: 16px; font-weight: 400; color: var(--muted); }
+    .plan-desc { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+    .plan-features {
+      list-style: none;
+      font-size: 14px;
+    }
+    .plan-features li {
+      padding: 6px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .plan-features li:last-child { border: none; }
+    .check { color: var(--green); font-size: 14px; }
+    .dash { color: var(--muted); font-size: 14px; }
+    .plan-cta { margin-top: 24px; width: 100%; justify-content: center; }
+
+    .popular-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent);
+      color: #0d1117;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 3px 12px;
+      border-radius: 20px;
+    }
+
+    /* ── FAQ ── */
+    .faq { padding: 80px 0; }
+    .faq-list { margin-top: 48px; max-width: 640px; margin-left: auto; margin-right: auto; }
+    .faq-item {
+      border-bottom: 1px solid var(--border);
+      padding: 20px 0;
+    }
+    .faq-q { font-weight: 700; margin-bottom: 8px; }
+    .faq-a { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+    /* ── Final CTA ── */
+    .final-cta {
+      padding: 96px 0;
+      text-align: center;
+    }
+    .final-cta h2 {
+      font-size: clamp(28px, 5vw, 48px);
+      font-weight: 800;
+      margin-bottom: 16px;
+    }
+    .final-cta p { font-size: 18px; color: var(--muted); margin-bottom: 36px; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 0;
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<!-- ── Nav ─────────────────────────────────────────────────────────────── -->
+<nav>
+  <div class="container">
+    <div class="inner">
+      <div class="logo">✈️ PR <span>Autopilot</span></div>
+      <div class="nav-links">
+        <a href="#how">How it works</a>
+        <a href="#pricing">Pricing</a>
+        <a href="https://github.com/dunncarlin-bit/pr-autopilot" target="_blank">GitHub</a>
+        <a href="https://github.com/apps/pr-autopilot/installations/new" class="btn btn-primary" style="padding: 8px 16px; font-size: 13px;">
+          Install Free
+        </a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="container">
+    <div class="badge">Free for public repos</div>
+    <h1>Stop writing<br><em>PR descriptions.</em></h1>
+    <p class="sub">
+      PR Autopilot reads your diff and writes a clear, structured description
+      the moment you open a pull request. Your reviewers will thank you.
+    </p>
+    <div class="cta-group">
+      <a href="https://github.com/apps/pr-autopilot/installations/new" class="btn btn-primary">
+        ⚡ Install on GitHub — it's free
+      </a>
+      <a href="#demo" class="btn btn-secondary">
+        See an example ↓
+      </a>
+    </div>
+    <p class="social-proof">2 min setup · No code required · Works on any repo</p>
+  </div>
+</section>
+
+<!-- ── Before / After ────────────────────────────────────────────────────── -->
+<section class="demo" id="demo">
+  <div class="container">
+    <p class="section-label">Before & After</p>
+    <h2 class="section-title">What reviewers actually see</h2>
+
+    <div class="before-after">
+      <!-- BEFORE -->
+      <div class="pr-card">
+        <div class="pr-card-header">
+          <span class="pr-icon">🟢</span>
+          fix checkout bug
+          <span class="pr-number">#247</span>
+        </div>
+        <div class="pr-card-body">
+          <div class="bad-badge">❌ Before</div>
+          <div class="empty-desc">No description provided.</div>
+          <div class="pr-footer" style="margin-top: 16px;">
+            ← Reviewer has to read every line of the diff to understand context.
+          </div>
+        </div>
+      </div>
+
+      <!-- AFTER -->
+      <div class="pr-card">
+        <div class="pr-card-header">
+          <span class="pr-icon">🟢</span>
+          fix checkout bug
+          <span class="pr-number">#247</span>
+        </div>
+        <div class="pr-card-body">
+          <div class="good-badge">✅ After PR Autopilot</div>
+          <div class="pr-desc">
+            <h4>What changed</h4>
+            <p>Replaced the synchronous inventory check in <code>checkout.ts</code> with an async call. Added a <code>CartValidationError</code> class to handle out-of-stock edge cases without crashing the payment flow.</p>
+            <h4>Why</h4>
+            <p>The sync call was blocking the event loop during high traffic, causing checkout timeouts. Fixes <code>#241</code>.</p>
+            <h4>How to test</h4>
+            <ul>
+              <li>Add an out-of-stock item → should show inline error, not 500</li>
+              <li>Complete checkout with valid cart → confirm payment still processes</li>
+              <li>Run <code>jest checkout.test.ts</code></li>
+            </ul>
+          </div>
+          <div class="pr-footer">📝 Generated by PR Autopilot — edit freely</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── How it works ───────────────────────────────────────────────────────── -->
+<section class="how" id="how">
+  <div class="container">
+    <p class="section-label">How it works</p>
+    <h2 class="section-title">Three steps. Zero effort.</h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Install the App</h3>
+        <p>Click Install, choose which repos to connect. Takes 90 seconds. No code, no config files, no CI changes.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Open a PR normally</h3>
+        <p>Just push your branch and open a pull request as you always have. Leave the description blank or write a quick note — doesn't matter.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Description appears</h3>
+        <p>Within seconds, PR Autopilot reads your diff and fills in a structured description. It's editable — your words, your context, just the skeleton is done.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Features ───────────────────────────────────────────────────────────── -->
+<section class="features">
+  <div class="container">
+    <p class="section-label">Features</p>
+    <h2 class="section-title">Built for real teams</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🧠</div>
+        <h3>Reads the actual diff</h3>
+        <p>Doesn't just look at filenames. Reads your code changes and understands what was added, removed, and restructured.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">✏️</div>
+        <h3>Fully editable output</h3>
+        <p>The generated description goes directly into the PR body. Edit it, extend it, or delete sections you don't need. It's a starting point, not a constraint.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🛑</div>
+        <h3>Skips PRs with descriptions</h3>
+        <p>Already wrote something? PR Autopilot detects it and stays out of the way. It only activates on empty or near-empty descriptions.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🏷️</div>
+        <h3>Labels auto-generated PRs</h3>
+        <p>Adds a <code>pr-autopilot</code> label so your team knows which descriptions were AI-assisted. Full transparency, no surprises.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>Your code never leaves GitHub</h3>
+        <p>Runs on the GitHub Apps platform. We see the diffs GitHub sends us, nothing more. No cloning, no storing, no training on your code.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Seconds, not minutes</h3>
+        <p>Description is posted within 5–15 seconds of opening a PR. Reviewers see it before they've even clicked in.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Pricing ─────────────────────────────────────────────────────────────── -->
+<section class="pricing" id="pricing">
+  <div class="container">
+    <p class="section-label">Pricing</p>
+    <h2 class="section-title">Simple, honest pricing</h2>
+    <div class="pricing-grid">
+      <!-- Free -->
+      <div class="plan">
+        <div class="plan-label">Free</div>
+        <div class="plan-price">$0</div>
+        <div class="plan-desc">Public repos only · Forever free</div>
+        <ul class="plan-features">
+          <li><span class="check">✓</span> All public repos</li>
+          <li><span class="check">✓</span> Unlimited PRs</li>
+          <li><span class="check">✓</span> Auto-label</li>
+          <li><span class="dash">—</span> Private repos</li>
+          <li><span class="dash">—</span> Priority support</li>
+        </ul>
+        <a href="https://github.com/apps/pr-autopilot/installations/new" class="btn btn-secondary plan-cta">
+          Install Free
+        </a>
+      </div>
+
+      <!-- Pro -->
+      <div class="plan featured">
+        <div class="popular-badge">Most popular</div>
+        <div class="plan-label">Team</div>
+        <div class="plan-price"><sup>$</sup>15<span>/mo</span></div>
+        <div class="plan-desc">Up to 10 developers · Private repos included</div>
+        <ul class="plan-features">
+          <li><span class="check">✓</span> Public + private repos</li>
+          <li><span class="check">✓</span> Unlimited PRs</li>
+          <li><span class="check">✓</span> Auto-label</li>
+          <li><span class="check">✓</span> Up to 10 developers</li>
+          <li><span class="check">✓</span> Priority support</li>
+        </ul>
+        <a href="https://github.com/apps/pr-autopilot/installations/new" class="btn btn-primary plan-cta">
+          Start free trial
+        </a>
+      </div>
+    </div>
+    <p style="text-align:center; margin-top: 24px; font-size: 13px; color: var(--muted);">
+      14-day free trial on Team plan · No credit card required to start
+    </p>
+  </div>
+</section>
+
+<!-- ── FAQ ────────────────────────────────────────────────────────────────── -->
+<section class="faq">
+  <div class="container">
+    <p class="section-label">FAQ</p>
+    <h2 class="section-title">Questions</h2>
+    <div class="faq-list">
+      <div class="faq-item">
+        <p class="faq-q">Does it work on my existing PRs?</p>
+        <p class="faq-a">No — it activates when a PR is first opened (or reopened/converted from draft). It won't retroactively touch existing PRs.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">What if I already wrote a description?</p>
+        <p class="faq-a">PR Autopilot checks the existing body before doing anything. If you've already written 3+ meaningful lines, it skips the PR entirely and stays out of your way.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">Can I customize the format?</p>
+        <p class="faq-a">Custom templates are on the roadmap for Team plan users. For now, the output follows a consistent What / Why / How to test / Notes structure.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">Does it read my entire codebase?</p>
+        <p class="faq-a">No. It only sees the diff that GitHub sends in the webhook payload — the actual lines changed in the PR. It never clones your repo or accesses history.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">What model does it use?</p>
+        <p class="faq-a">Claude Haiku (Anthropic) — chosen for speed and accuracy. Each description takes about 2–5 seconds to generate.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">How do I uninstall it?</p>
+        <p class="faq-a">GitHub App → Settings → Applications → Installed GitHub Apps → Configure → Remove. Takes 10 seconds. All generated descriptions stay (they're just text in your PRs).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Final CTA ───────────────────────────────────────────────────────────── -->
+<section class="final-cta">
+  <div class="container">
+    <h2>Your reviewers deserve better PRs.</h2>
+    <p>Install in 90 seconds. Free for public repos.</p>
+    <a href="https://github.com/apps/pr-autopilot/installations/new" class="btn btn-primary" style="font-size: 17px; padding: 14px 32px;">
+      ⚡ Install PR Autopilot
+    </a>
+  </div>
+</section>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+<footer>
+  <div class="container">
+    <p>
+      PR Autopilot · Made by <a href="https://github.com/dunncarlin-bit" target="_blank">dunncarlin-bit</a>
+      · <a href="https://github.com/dunncarlin-bit/pr-autopilot" target="_blank">GitHub</a>
+      · <a href="mailto:dunndarrington@gmail.com">Contact</a>
+    </p>
+    <p style="margin-top: 8px; font-size: 12px;">© 2026 · Powered by Claude</p>
+  </div>
+</footer>
+
+</body>
+</html>

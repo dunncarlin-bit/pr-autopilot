@@ -177,11 +177,9 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, function() {
-  console.log('PR Autopilot running on port ' + PORT);
-  console.log('Webhook endpoint: POST /webhook');
-  console.log('Landing page:     GET  /');
-  console.log('Health check:     GET  /health');
-});
+// Temporary debug endpoint — tests GitHub App auth without a real webhook
+// REMOVE before production Marketplace listing
+app.get('/debug-auth', async (_req, res) => {
+  const appId = process.env.GITHUB_APP_ID;
+  const rawKey = process.env.GITHUB_PRIVATE_KEY;
+  const privateKey = ra

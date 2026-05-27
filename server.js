@@ -183,3 +183,12 @@ app.post('/webhook', async function(req, res) {
     console.error('Error processing PR:', err.message);
     return res.status(500).json({ error: err.message });
   }
+});
+
+// Start server
+var PORT = process.env.PORT || 3000;
+app.listen(PORT, function() {
+  console.log('PR Autopilot running on port ' + PORT);
+  console.log('Webhook endpoint: POST /webhook');
+  console.log('Health check:     GET  /health');
+});

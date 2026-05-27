@@ -4,6 +4,13 @@
  * Listens for `pull_request` events (opened, reopened, ready_for_review).
  * When a PR has an empty/minimal description, calls Claude to generate one
  * and either updates the PR body or posts a comment.
+ *
+ * Environment variables:
+ *   GITHUB_APP_ID          - Your GitHub App ID
+ *   GITHUB_PRIVATE_KEY     - PEM-encoded private key (newlines as \n)
+ *   GITHUB_WEBHOOK_SECRET  - Webhook secret set in App settings
+ *   ANTHROPIC_API_KEY      - Claude API key
+ *   PORT                   - HTTP port (default 3000)
  */
 
 require('dotenv').config();
@@ -43,14 +50,14 @@ async function getInstallationToken(installationId) {
   var privateKey = rawKey.replace(/\\n/g, '\n');
 
   var now = Math.floor(Date.now() / 1000);
-  var payload = {
+  var jwtPayload = {
     iat: now - 60,
     exp: now + 540,
     iss: appId,
   };
 
   var header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
-  var body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  var body = Buffer.from(JSON.stringify(jwtPayload)).toString('base64url');
   var unsigned = header + '.' + body;
 
   var sign = crypto.createSign('RSA-SHA256');
@@ -71,54 +78,13 @@ async function getInstallationToken(installationId) {
   );
 
   if (!resp.ok) {
-    var err = await resp.text();
-    throw new Error('Failed to get installation token: ' + resp.status + ' -- ' + err);
+    var errText = await resp.text();
+    throw new Error('Failed to get installation token: ' + resp.status + ' -- ' + errText);
   }
 
   var data = await resp.json();
   return data.token;
 }
-
-// Temporary debug endpoint -- tests GitHub App auth without a real webhook
-// REMOVE before Marketplace listing
-app.get('/debug-auth', async function(_req, res) {
-  var appId = process.env.GITHUB_APP_ID;
-  var rawKey = process.env.GITHUB_PRIVATE_KEY || '';
-  var privateKey = rawKey.replace(/\\n/g, '\n');
-
-  var diagnostics = {
-    appId: appId || '(missing)',
-    keyPresent: rawKey.length > 0,
-    keyLength: rawKey.length,
-    keyStart: rawKey.slice(0, 40),
-    keyHasRealNewlines: rawKey.indexOf('\n') !== -1,
-    keyHasLiteralBackslashN: rawKey.indexOf('\\n') !== -1,
-  };
-
-  try {
-    var now = Math.floor(Date.now() / 1000);
-    var payload = { iat: now - 60, exp: now + 540, iss: appId };
-    var header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
-    var bodyPart = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    var unsigned = header + '.' + bodyPart;
-    var sign = crypto.createSign('RSA-SHA256');
-    sign.update(unsigned);
-    var signature = sign.sign(privateKey, 'base64url');
-    var jwt = unsigned + '.' + signature;
-
-    var resp = await fetch('https://api.github.com/app/installations', {
-      headers: {
-        Authorization: 'Bearer ' + jwt,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-    var ghData = await resp.json();
-    return res.json({ ok: resp.ok, status: resp.status, diagnostics: diagnostics, installations: ghData });
-  } catch (err) {
-    return res.json({ ok: false, error: err.message, errorType: err.constructor.name, diagnostics: diagnostics });
-  }
-});
 
 // Webhook endpoint
 app.post('/webhook', async function(req, res) {
@@ -160,7 +126,6 @@ app.post('/webhook', async function(req, res) {
   var installationId = payload.installation && payload.installation.id;
 
   console.log('PR #' + pullNumber + ' "' + title + '" (' + owner.login + '/' + repo + ') action: ' + payload.action);
-  console.log('installationId: ' + installationId);
 
   // 5. Check if we should generate a description
   if (!shouldGenerate(existingBody)) {
@@ -168,7 +133,9 @@ app.post('/webhook', async function(req, res) {
     return res.status(200).json({ skipped: true, reason: 'description already present' });
   }
 
-  // 6. Process synchronously before responding
+  // 6. Process synchronously before responding.
+  //    Vercel serverless kills the function after res.end() so all work
+  //    must complete before we call res.json().
   try {
     var token = await getInstallationToken(installationId);
     var octokit = getOctokit(token);
@@ -214,4 +181,6 @@ app.post('/webhook', async function(req, res) {
 var PORT = process.env.PORT || 3000;
 app.listen(PORT, function() {
   console.log('PR Autopilot running on port ' + PORT);
+  console.log('Webhook endpoint: POST /webhook');
+  console.log('Health check:     GET  /health');
 });

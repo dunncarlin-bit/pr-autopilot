@@ -43,6 +43,14 @@ app.get('/health', function(_req, res) {
   res.json({ status: 'ok', ts: new Date().toISOString() });
 });
 
+// Clean URLs for legal pages
+app.get('/privacy', function(_req, res) {
+  res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+});
+app.get('/terms', function(_req, res) {
+  res.sendFile(path.join(__dirname, 'public', 'terms.html'));
+});
+
 // GitHub App installation token generation
 async function getInstallationToken(installationId) {
   var appId = process.env.GITHUB_APP_ID;
@@ -175,12 +183,3 @@ app.post('/webhook', async function(req, res) {
     console.error('Error processing PR:', err.message);
     return res.status(500).json({ error: err.message });
   }
-});
-
-// Start server
-var PORT = process.env.PORT || 3000;
-app.listen(PORT, function() {
-  console.log('PR Autopilot running on port ' + PORT);
-  console.log('Webhook endpoint: POST /webhook');
-  console.log('Health check:     GET  /health');
-});

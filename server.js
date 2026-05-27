@@ -4,18 +4,6 @@
  * Listens for `pull_request` events (opened, reopened, ready_for_review).
  * When a PR has an empty/minimal description, calls Claude to generate one
  * and either updates the PR body or posts a comment.
- *
- * Environment variables (see .env.example):
- *   GITHUB_APP_ID          - Your GitHub App ID
- *   GITHUB_PRIVATE_KEY     - PEM-encoded private key (newlines as \n)
- *   GITHUB_WEBHOOK_SECRET  - Webhook secret set in App settings
- *   ANTHROPIC_API_KEY      - Claude API key
- *   PORT                   - HTTP port (default 3000)
- *
- * NOTE: All processing happens synchronously before responding.
- * Vercel serverless kills the function immediately after res.end() --
- * fire-and-forget / setImmediate patterns never execute in that environment.
- * Claude Haiku is fast enough (~3-5s) to stay within GitHub's 10s timeout.
  */
 
 require('dotenv').config();
@@ -28,7 +16,6 @@ const { verifySignature } = require('./lib/verify');
 const {
   getOctokit,
   getPRFiles,
-  getPRDetails,
   updatePRBody,
   postComment,
   addLabel,
@@ -45,36 +32,38 @@ app.use('/webhook', express.raw({ type: '*/*' }));
 app.use(express.json());
 
 // Health check
-app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
+app.get('/health', function(_req, res) {
+  res.json({ status: 'ok', ts: new Date().toISOString() });
+});
 
 // GitHub App installation token generation
 async function getInstallationToken(installationId) {
-  const appId = process.env.GITHUB_APP_ID;
-  const privateKey = process.env.GITHUB_PRIVATE_KEY.replace(/\\n/g, '\n');
+  var appId = process.env.GITHUB_APP_ID;
+  var rawKey = process.env.GITHUB_PRIVATE_KEY || '';
+  var privateKey = rawKey.replace(/\\n/g, '\n');
 
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
+  var now = Math.floor(Date.now() / 1000);
+  var payload = {
     iat: now - 60,
     exp: now + 540,
     iss: appId,
   };
 
-  const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
-  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const unsigned = `${header}.${body}`;
+  var header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+  var body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  var unsigned = header + '.' + body;
 
-  const sign = crypto.createSign('RSA-SHA256');
+  var sign = crypto.createSign('RSA-SHA256');
   sign.update(unsigned);
-  const signature = sign.sign(privateKey, 'base64url');
+  var signature = sign.sign(privateKey, 'base64url');
+  var jwt = unsigned + '.' + signature;
 
-  const jwt = `${unsigned}.${signature}`;
-
-  const resp = await fetch(
-    `https://api.github.com/app/installations/${installationId}/access_tokens`,
+  var resp = await fetch(
+    'https://api.github.com/app/installations/' + installationId + '/access_tokens',
     {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${jwt}`,
+        Authorization: 'Bearer ' + jwt,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
@@ -82,37 +71,78 @@ async function getInstallationToken(installationId) {
   );
 
   if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`Failed to get installation token: ${resp.status} -- ${err}`);
+    var err = await resp.text();
+    throw new Error('Failed to get installation token: ' + resp.status + ' -- ' + err);
   }
 
-  const data = await resp.json();
+  var data = await resp.json();
   return data.token;
 }
 
+// Temporary debug endpoint -- tests GitHub App auth without a real webhook
+// REMOVE before Marketplace listing
+app.get('/debug-auth', async function(_req, res) {
+  var appId = process.env.GITHUB_APP_ID;
+  var rawKey = process.env.GITHUB_PRIVATE_KEY || '';
+  var privateKey = rawKey.replace(/\\n/g, '\n');
+
+  var diagnostics = {
+    appId: appId || '(missing)',
+    keyPresent: rawKey.length > 0,
+    keyLength: rawKey.length,
+    keyStart: rawKey.slice(0, 40),
+    keyHasRealNewlines: rawKey.indexOf('\n') !== -1,
+    keyHasLiteralBackslashN: rawKey.indexOf('\\n') !== -1,
+  };
+
+  try {
+    var now = Math.floor(Date.now() / 1000);
+    var payload = { iat: now - 60, exp: now + 540, iss: appId };
+    var header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+    var bodyPart = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    var unsigned = header + '.' + bodyPart;
+    var sign = crypto.createSign('RSA-SHA256');
+    sign.update(unsigned);
+    var signature = sign.sign(privateKey, 'base64url');
+    var jwt = unsigned + '.' + signature;
+
+    var resp = await fetch('https://api.github.com/app/installations', {
+      headers: {
+        Authorization: 'Bearer ' + jwt,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    var ghData = await resp.json();
+    return res.json({ ok: resp.ok, status: resp.status, diagnostics: diagnostics, installations: ghData });
+  } catch (err) {
+    return res.json({ ok: false, error: err.message, errorType: err.constructor.name, diagnostics: diagnostics });
+  }
+});
+
 // Webhook endpoint
-app.post('/webhook', async (req, res) => {
+app.post('/webhook', async function(req, res) {
   // 1. Verify signature
-  const sig = req.headers['x-hub-signature-256'];
+  var sig = req.headers['x-hub-signature-256'];
   if (!verifySignature(process.env.GITHUB_WEBHOOK_SECRET, sig, req.body)) {
     console.warn('Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
   // 2. Parse payload
-  let payload;
+  var payload;
   try {
     payload = JSON.parse(req.body.toString('utf8'));
-  } catch {
+  } catch (e) {
     return res.status(400).json({ error: 'Invalid JSON' });
   }
 
-  const event = req.headers['x-github-event'];
+  var event = req.headers['x-github-event'];
 
   // 3. Only handle pull_request events we care about
-  const relevantActions = ['opened', 'reopened', 'ready_for_review'];
-  if (event !== 'pull_request' || !relevantActions.includes(payload.action)) {
-    return res.status(200).json({ skipped: true, reason: `event=${event} action=${payload.action}` });
+  var relevantActions = ['opened', 'reopened', 'ready_for_review'];
+  if (event !== 'pull_request' || relevantActions.indexOf(payload.action) === -1) {
+    return res.status(200).json({ skipped: true, reason: 'event=' + event + ' action=' + payload.action });
   }
 
   // 4. Skip draft PRs
@@ -120,11 +150,17 @@ app.post('/webhook', async (req, res) => {
     return res.status(200).json({ skipped: true, reason: 'draft PR' });
   }
 
-  const { number: pullNumber, title, body: existingBody, base, head } = payload.pull_request;
-  const { owner, name: repo } = payload.repository;
-  const installationId = payload.installation && payload.installation.id;
+  var pullNumber = payload.pull_request.number;
+  var title = payload.pull_request.title;
+  var existingBody = payload.pull_request.body;
+  var head = payload.pull_request.head;
+  var base = payload.pull_request.base;
+  var owner = payload.repository.owner;
+  var repo = payload.repository.name;
+  var installationId = payload.installation && payload.installation.id;
 
   console.log('PR #' + pullNumber + ' "' + title + '" (' + owner.login + '/' + repo + ') action: ' + payload.action);
+  console.log('installationId: ' + installationId);
 
   // 5. Check if we should generate a description
   if (!shouldGenerate(existingBody)) {
@@ -132,24 +168,22 @@ app.post('/webhook', async (req, res) => {
     return res.status(200).json({ skipped: true, reason: 'description already present' });
   }
 
-  // 6. Process synchronously before responding.
-  //    Vercel serverless kills the function after res.end() so all work
-  //    must complete before we call res.json().
+  // 6. Process synchronously before responding
   try {
-    const token = await getInstallationToken(installationId);
-    const octokit = getOctokit(token);
+    var token = await getInstallationToken(installationId);
+    var octokit = getOctokit(token);
 
-    const files = await getPRFiles(octokit, owner.login, repo, pullNumber);
+    var files = await getPRFiles(octokit, owner.login, repo, pullNumber);
     console.log(files.length + ' files changed');
 
-    const patchSummary = files
+    var patchSummary = files
       .filter(function(f) { return f.patch; })
       .map(function(f) { return '--- ' + f.filename + '\n' + f.patch; })
       .join('\n\n')
       .slice(0, 20000);
 
     console.log('Generating description...');
-    const description = await generateDescription({
+    var description = await generateDescription({
       title: title,
       headBranch: head.ref,
       baseBranch: base.ref,
@@ -159,16 +193,15 @@ app.post('/webhook', async (req, res) => {
 
     try {
       await updatePRBody(octokit, owner.login, repo, pullNumber, description);
-      console.log('PR body updated');
+      console.log('PR body updated successfully');
     } catch (updateErr) {
       console.warn('Could not update PR body, posting comment instead:', updateErr.message);
-      const commentBody = '### PR Autopilot -- Suggested Description\n\nThe PR was opened without a description. Here is a generated one:\n\n---\n\n' + description;
+      var commentBody = '### PR Autopilot -- Suggested Description\n\n' + description;
       await postComment(octokit, owner.login, repo, pullNumber, commentBody);
       console.log('Comment posted');
     }
 
     await addLabel(octokit, owner.login, repo, pullNumber, 'pr-autopilot');
-
     return res.status(200).json({ ok: true });
 
   } catch (err) {
@@ -177,9 +210,8 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Temporary debug endpoint — tests GitHub App auth without a real webhook
-// REMOVE before production Marketplace listing
-app.get('/debug-auth', async (_req, res) => {
-  const appId = process.env.GITHUB_APP_ID;
-  const rawKey = process.env.GITHUB_PRIVATE_KEY;
-  const privateKey = ra
+// Start server
+var PORT = process.env.PORT || 3000;
+app.listen(PORT, function() {
+  console.log('PR Autopilot running on port ' + PORT);
+});

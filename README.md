@@ -1,46 +1,78 @@
-# PR Autopilot
+# 🚀 PR Autopilot — Your AI Writing Assistant for Pull Requests
 
-PR Autopilot is a GitHub App that automatically generates clear, structured pull request descriptions using AI. It helps engineering teams move faster by providing reviewers with instant context for every change.
+**Stop writing PR descriptions. Start merging.**
 
-## 🚀 Features
+PR Autopilot is a GitHub App that automatically writes clear, professional, and structured pull request descriptions. By analyzing your code changes (diffs), it provides instant context for reviewers, reducing friction and speeding up your development cycle.
 
-- **Auto-Generated Descriptions**: Turns raw diffs and PR metadata into high-quality Markdown descriptions.
-- **Smart Detection**: Only generates descriptions for PRs that are empty or have minimal content.
-- **Structured Output**: Follows a consistent format: What changed, Why, How to test, and Notes.
-- **Editable**: Generated descriptions include a footer and are fully editable by developers.
-- **Privacy First**: Code diffs are processed in-memory and never stored.
+---
+
+## 🌟 Why PR Autopilot?
+
+### For Developers 👨‍💻
+*   **Save Time:** No more staring at a blank text box trying to remember everything you changed.
+*   **Focus on Code:** Spend your energy solving problems, not documenting them.
+*   **Professionalism:** Every PR looks polished and well-structured, regardless of how fast you're moving.
+
+### For Reviewers 🔍
+*   **Instant Context:** Understand the "what" and "why" of a PR before you even look at the code.
+*   **Faster Reviews:** Clear descriptions highlight key changes, making it easier to spot potential issues.
+*   **Consistent Format:** Every PR follows the same structure, making your review process predictable.
+
+---
+
+## ✨ Key Features
+
+*   **🤖 AI-Powered Analysis:** Uses Claude 3.5 Haiku to deeply understand your code changes.
+*   **🎯 Smart Activation:** Only steps in when you need it. If you've already written a description, it stays out of the way.
+*   **📝 Structured Output:** Every generated description includes:
+    *   **What changed:** A concise summary of code modifications.
+    *   **Why:** The inferred purpose or motivation behind the changes.
+    *   **How to test:** Actionable steps for reviewers to verify the work.
+    *   **Notes:** Highlighting risks, breaking changes, or missing tests.
+*   **✏️ Fully Editable:** The AI provides a draft directly in your PR body—you have the final word.
+*   **🔒 Privacy-Focused:** We don't store your code. Diffs are processed in-memory and discarded immediately.
+
+---
 
 ## 🛠️ How it Works
 
-1. **Webhook**: GitHub sends a `pull_request` event to PR Autopilot.
-2. **Analysis**: The app checks if the PR needs a description and fetches the file diffs.
-3. **AI Generation**: Anthropic's Claude (3.5 Haiku) analyzes the changes and writes a draft.
-4. **Update**: The app updates the PR body or posts a comment with the suggestion.
-
-## 📋 Structure of Generated Descriptions
-
-- **What changed**: Specific details about code modifications.
-- **Why**: The inferred motivation behind the change.
-- **How to test**: Actionable steps for reviewers to verify the PR.
-- **Notes**: Important flags like security concerns or breaking changes.
-
-## ⚙️ Setup
-
-See [SETUP.md](./SETUP.md) for detailed instructions on creating your own instance of the GitHub App and deploying it to Vercel.
-
-### Environment Variables
-
-The following environment variables are required:
-
-- `GITHUB_APP_ID`: Your GitHub App ID.
-- `GITHUB_PRIVATE_KEY`: PEM-encoded private key.
-- `GITHUB_WEBHOOK_SECRET`: Webhook secret set in GitHub App settings.
-- `ANTHROPIC_API_KEY`: Your Anthropic API key for Claude.
-
-## 🛡️ Legal
-
-- [Privacy Policy](https://pr-autopilot.vercel.app/privacy)
-- [Terms of Service](https://pr-autopilot.vercel.app/terms)
+1.  **Event:** You open a new Pull Request on GitHub.
+2.  **Detection:** PR Autopilot receives a notification and checks if the description is empty.
+3.  **Analysis:** It securely fetches the file diffs and sends them to our AI engine.
+4.  **Delivery:** Within seconds, a structured Markdown description is added to your PR.
 
 ---
-*📝 Built for developers who value their time.*
+
+## ⚙️ Quick Start & Setup
+
+PR Autopilot can be installed on your own repositories or organization.
+
+### Installation
+1.  Visit the [PR Autopilot Installation Page](https://github.com/apps/pr-autopilot/installations/new).
+2.  Select the repositories you want to enable.
+3.  That's it! Open your next PR to see it in action.
+
+### Self-Hosting (Optional)
+If you prefer to run your own instance, follow the [SETUP.md](./SETUP.md) guide. You will need:
+*   A GitHub App ID and Private Key.
+*   An Anthropic API Key.
+*   A Vercel account for deployment.
+
+---
+
+## 🛡️ Security & Privacy
+
+*   **Minimal Permissions:** We only ask for the permissions needed to read PRs and write descriptions.
+*   **No Code Retention:** Your source code is never stored on our servers.
+*   **Verified Webhooks:** All communication from GitHub is verified using secure signatures.
+
+---
+
+## 📄 Legal & Support
+
+*   [Privacy Policy](https://pr-autopilot.vercel.app/privacy)
+*   [Terms of Service](https://pr-autopilot.vercel.app/terms)
+*   **Need Help?** Contact us at [dunncarlin@gmail.com](mailto:dunncarlin@gmail.com)
+
+---
+*📝 Built for engineers who value their time and their team.*
